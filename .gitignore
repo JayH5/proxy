@@ -22,3 +22,11 @@ _testmain.go
 *.exe
 *.test
 *.prof
+
+# Binaries
+bin
+tools
+
+# Since proxy can be used as a package, don't commit the vendor directory.
+# For background see: https://groups.google.com/forum/#!topic/golang-dev/4FfTBfN2YaI
+vendor

@@ -4,7 +4,7 @@
 
 // Reverse proxy tests.
 
-package main
+package proxy
 
 import (
 	"bufio"
