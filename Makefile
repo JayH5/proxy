@@ -1,9 +1,7 @@
-ifeq ($(origin VERSION), undefined)
-	VERSION != git rev-parse --short HEAD
-endif
-HOST_GOOS=$(shell go env GOOS)
-HOST_GOARCH=$(shell go env GOARCH)
+HOST_GOOS = $(shell go env GOOS)
+HOST_GOARCH = $(shell go env GOARCH)
 REPOPATH = github.com/JayH5/proxy
+VERSION ?= $(shell git rev-parse --short HEAD)
 
 VERBOSE_1 := -v
 VERBOSE_2 := -v -x
@@ -36,7 +34,7 @@ vendor: tools/glide
 tools/glide:
 	@echo "Downloading glide"
 	mkdir -p tools
-	curl -L https://github.com/Masterminds/glide/releases/download/v0.11.0/glide-v0.11.0-$(HOST_GOOS)-$(HOST_GOARCH).tar.gz | tar -xz -C tools
+	curl -L https://github.com/Masterminds/glide/releases/download/v0.12.1/glide-v0.12.1-$(HOST_GOOS)-$(HOST_GOARCH).tar.gz | tar -xz -C tools
 	mv tools/$(HOST_GOOS)-$(HOST_GOARCH)/glide tools/glide
 	rm -r tools/$(HOST_GOOS)-$(HOST_GOARCH)
 
