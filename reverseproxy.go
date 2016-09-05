@@ -158,12 +158,15 @@ func (p *ReverseProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 }
 
 func (p *ReverseProxy) prepareBackendRequest(rw http.ResponseWriter, req *http.Request, reqDone chan struct{}) *http.Request {
-	ctx, cancel := context.WithCancel(req.Context())
-	outreq := req.WithContext(ctx)
+	outreq := new(http.Request)
+	*outreq = *req // includes shallow copies of maps, but okay
 
 	// If the client times out while we're reading the response from the backend,
 	// cancel the backend request.
 	if closeNotifier, ok := rw.(http.CloseNotifier); ok {
+		ctx, cancel := context.WithCancel(outreq.Context())
+		outreq = outreq.WithContext(ctx)
+
 		clientGone := closeNotifier.CloseNotify()
 
 		outreq.Body = struct {
