@@ -139,7 +139,7 @@ func (c *runOnFirstRead) Read(bs []byte) (int, error) {
 }
 
 func (p *ReverseProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
-	reqDone := make(chan struct {})
+	reqDone := make(chan struct{})
 	defer close(reqDone)
 	outreq := p.prepareBackendRequest(rw, req, reqDone)
 
