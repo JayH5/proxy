@@ -7,6 +7,7 @@
 package proxy
 
 import (
+	"context"
 	"io"
 	"log"
 	"net"
@@ -120,10 +121,6 @@ var hopHeaders = []string{
 	"Upgrade",
 }
 
-type requestCanceler interface {
-	CancelRequest(*http.Request)
-}
-
 type runOnFirstRead struct {
 	io.Reader // optional; nil means empty body
 
@@ -142,39 +139,50 @@ func (c *runOnFirstRead) Read(bs []byte) (int, error) {
 }
 
 func (p *ReverseProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
+	reqDone := make(chan struct {})
+	defer close(reqDone)
+	outreq := p.prepareBackendRequest(rw, req, reqDone)
+
 	transport := p.Transport
 	if transport == nil {
 		transport = http.DefaultTransport
 	}
+	res, err := transport.RoundTrip(outreq)
+	if err != nil {
+		p.logf("http: proxy error: %v", err)
+		rw.WriteHeader(http.StatusBadGateway)
+		return
+	}
 
-	outreq := new(http.Request)
-	*outreq = *req // includes shallow copies of maps, but okay
+	p.copyResponse(res, rw)
+}
 
+func (p *ReverseProxy) prepareBackendRequest(rw http.ResponseWriter, req *http.Request, reqDone chan struct{}) *http.Request {
+	ctx, cancel := context.WithCancel(req.Context())
+	outreq := req.WithContext(ctx)
+
+	// If the client times out while we're reading the response from the backend,
+	// cancel the backend request.
 	if closeNotifier, ok := rw.(http.CloseNotifier); ok {
-		if requestCanceler, ok := transport.(requestCanceler); ok {
-			reqDone := make(chan struct{})
-			defer close(reqDone)
+		clientGone := closeNotifier.CloseNotify()
 
-			clientGone := closeNotifier.CloseNotify()
-
-			outreq.Body = struct {
-				io.Reader
-				io.Closer
-			}{
-				Reader: &runOnFirstRead{
-					Reader: outreq.Body,
-					fn: func() {
-						go func() {
-							select {
-							case <-clientGone:
-								requestCanceler.CancelRequest(outreq)
-							case <-reqDone:
-							}
-						}()
-					},
+		outreq.Body = struct {
+			io.Reader
+			io.Closer
+		}{
+			Reader: &runOnFirstRead{
+				Reader: outreq.Body,
+				fn: func() {
+					go func() {
+						select {
+						case <-clientGone:
+							cancel()
+						case <-reqDone:
+						}
+					}()
 				},
-				Closer: outreq.Body,
-			}
+			},
+			Closer: outreq.Body,
 		}
 	}
 
@@ -211,13 +219,12 @@ func (p *ReverseProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		outreq.Header.Set("X-Forwarded-For", clientIP)
 	}
 
-	res, err := transport.RoundTrip(outreq)
-	if err != nil {
-		p.logf("http: proxy error: %v", err)
-		rw.WriteHeader(http.StatusBadGateway)
-		return
-	}
+	return outreq
+}
 
+func (p *ReverseProxy) copyResponse(res *http.Response, rw http.ResponseWriter) {
+	// Remove the hop-by-hop headers from the backend response before copying to
+	// the headers to the client response.
 	for _, h := range hopHeaders {
 		res.Header.Del(h)
 	}
@@ -243,12 +250,13 @@ func (p *ReverseProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 			fl.Flush()
 		}
 	}
-	p.copyResponse(rw, res.Body)
+	p.copyResponseBody(rw, res.Body)
+
 	res.Body.Close() // close now, instead of defer, to populate res.Trailer
 	copyHeader(rw.Header(), res.Trailer)
 }
 
-func (p *ReverseProxy) copyResponse(dst io.Writer, src io.Reader) {
+func (p *ReverseProxy) copyResponseBody(dst io.Writer, src io.Reader) {
 	if p.FlushInterval != 0 {
 		if wf, ok := dst.(writeFlusher); ok {
 			mlw := &maxLatencyWriter{
