@@ -1,4 +1,4 @@
-package proxy
+package backend
 
 import (
 	"fmt"
@@ -6,18 +6,6 @@ import (
 	"net/url"
 	"sync"
 )
-
-type Backend interface {
-	GetServer(req *http.Request) *url.URL
-}
-
-type SingleServer struct {
-	server *url.URL
-}
-
-func (s *SingleServer) GetServer(req *http.Request) *url.URL {
-	return s.server
-}
 
 type RoundRobin struct {
 	// List of servers
